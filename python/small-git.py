@@ -1,6 +1,8 @@
-# noqa: INP001
+import os
+import subprocess
 from enum import StrEnum
 from pathlib import Path
+from shutil import rmtree
 from typing import cast
 
 import git
@@ -61,8 +63,8 @@ def count_commits(c0: git.Commit, c1: git.Commit):
 class Cmd(StrEnum):
     # fmt: off
     COMMIT     = "💾 Commit"
-    PULL       = "🔽 Pull"
-    PUSH       = "🔼 Push"
+    PULL       = "⬇️  Pull"
+    PUSH       = "⬆️  Push"
     RESET      = "🪓 Reset"
     FORCE_PUSH = "⏫ Force-Push"
     SQUASH     = "🧹 Squash"
@@ -70,8 +72,12 @@ class Cmd(StrEnum):
     REBASE     = "🌳 Rebase"
     FETCH      = "🔃 Fetch"
     SYNC       = "🔄️ Sync"
-    STASH      = "📁 Stash"
+    STASH      = "🗄️  Stash"
     SUBMOD     = "📦 Submodule"
+    SCOOP      = "🥄 Scoop"
+    ENV        = "🌏 Env"
+    DELETE     = "🗑️  Delete"
+    CHECK      = "🚓 Check"
     # fmt: on
 
     def start(self):
@@ -85,10 +91,10 @@ class Cmd(StrEnum):
 
     def fail(self, e: Exception):
         typer.echo(e)
-        typer.secho(f"{self} FAILED", fg=typer.colors.RED)
+        typer.secho(f"{self} FAILED", bg=typer.colors.RED)
 
     def info(self, msg: str):
-        typer.echo(f"{self} {msg}")
+        typer.echo(f"{self}: {msg}")
 
     def warn(self, msg: str):
         typer.secho(f"🚨 {msg}", bg=typer.colors.YELLOW)
@@ -97,19 +103,29 @@ class Cmd(StrEnum):
         return RuntimeError(f"💥 {msg}")
 
     def confirm(self, msg: str) -> bool:
-        self.warn(msg)
-        return typer.confirm("")
+        s = typer.style(f"✅ {msg}", bg=typer.colors.BLUE)
+        return typer.confirm(s)
+
+    def run(self, cmds: str | list[str], *, use_proxy: bool = False):
+        if use_proxy:
+            proxy = "http://10.3.6.15:3128"
+            env = os.environ.copy()
+            env["HTTP_PROXY"] = proxy
+            env["HTTPS_PROXY"] = proxy
+        else:
+            env = None
+
+        if isinstance(cmds, str):
+            cmds = [cmds]
+        for c in cmds:
+            self.info(f"{c}")
+            subprocess.run(c, check=True, shell=True, capture_output=False, text=True, env=env)  # noqa: S602
 
 
 @app.command()
 def show():
     for cmd in Cmd:
         cmd.start()
-        cmd.info("This is Info")
-        cmd.warn("This is Warn")
-        cmd.cancel()
-        cmd.fail(RuntimeError("This is Fail"))
-        cmd.end()
 
 
 @app.command()
@@ -158,8 +174,8 @@ def reset_to(c: git.Commit, *, need_commit: bool = True) -> None:
 @app.command()
 def reset() -> None:
     base = find_base()
-    reset_to(base)
-    Cmd.RESET.warn(f"You need to {Cmd.FORCE_PUSH} later")
+    reset_to(base, need_commit=False)
+    Cmd.RESET.warn(f"You need to {Cmd.COMMIT} and {Cmd.FORCE_PUSH} later")
 
 
 @app.command()
@@ -190,7 +206,7 @@ def squash() -> None:
     cmd = Cmd.SQUASH
     cmd.start()
     base = find_base()
-    reset_to(base, need_commit=True)
+    reset_to(base)
     force_push()
     cmd.end()
 
@@ -217,7 +233,7 @@ def abort() -> None:
     cmd.end()
 
 
-def try_rebase(c: git.Commit) -> bool:
+def rebase_to(c: git.Commit) -> bool:
     cmd = Cmd.REBASE
     cmd.start()
 
@@ -231,18 +247,18 @@ def try_rebase(c: git.Commit) -> bool:
     return True
 
 
-def reset_and_rebase(c: git.Commit, base: git.Commit) -> bool:
+def try_rebase(c: git.Commit, base: git.Commit) -> bool:
     cmd = Cmd.REBASE
 
-    if try_rebase(c):
+    if rebase_to(c):
         return True
     abort()
 
     cmd.warn("Found 💣 Conflict")
     if cmd.confirm(f"{Cmd.RESET} and {Cmd.REBASE} again?"):
-        reset_to(base, need_commit=True)
-        if not try_rebase(c):
-            raise cmd.error(f"You need to resolve conflicts manually, then {Cmd.SYNC}")
+        reset_to(base)
+        if not rebase_to(c):
+            raise cmd.error(f"You need to resolve conflict manually, then {Cmd.SYNC}")
         return True
     cmd.cancel()
     return False
@@ -263,16 +279,18 @@ def sync() -> bool:
     fetch()
 
     base = find_base()
-    if base != master.commit:
-        cmd.warn("Your branch is out-of-date, need to {Cmd.REBASE} later")
 
     if my.name not in origin.refs:
-        if base == master.commit or reset_and_rebase(master.commit, base):
+        if base == master.commit or try_rebase(master.commit, base):
             push()
         else:
+            cmd.warn("You need to choose {Cmd.RESET} and {Cmd.REBASE}")
             cmd.cancel()
-            raise cmd.error("You need to choose {Cmd.RESET} and {Cmd.REBASE}")
+            return False
     else:
+        if base != master.commit:
+            cmd.warn("Your branch is out-of-date, need to {Cmd.REBASE} later")
+
         my_origin = origin.refs[my.name]
 
         my_ahead = count_commits(my_origin.commit, my.commit)
@@ -289,15 +307,16 @@ def sync() -> bool:
 
             # NOTE: never rebase others banch
             if (base.committed_datetime > find_base(my_origin, master).committed_datetime) or (
-                cmd.confirm(f"{Cmd.PUSH} your branch?")
+                cmd.confirm(f"{Cmd.FORCE_PUSH} your branch?")
             ):
                 force_push()
             elif (cmd.confirm(f"{Cmd.PULL} your-origin branch?")) and (
-                reset_and_rebase(my_origin.commit, find_base(my, my_origin))
+                try_rebase(my_origin.commit, find_base(my, my_origin))
             ):
                 if my.commit != my_origin.commit:
                     push()
             else:
+                cmd.warn("You need to choose {Cmd.FORCE_PUSH} or {Cmd.PULL}")
                 cmd.cancel()
                 return False
         else:
@@ -317,38 +336,25 @@ def rebase() -> None:
         return
 
     # origin.pull(master.name, rebase=True, autostash=True)
-    if reset_and_rebase(master.commit, base):
+    if try_rebase(master.commit, base):
         force_push()
 
 
 @app.command()
 def stash() -> None:
     stash_cnt = len(cast("str", repo.git.stash("list")).splitlines())
-    assert stash_cnt < 2
 
     cmd = Cmd.STASH
     cmd.start()
 
-    match repo.is_dirty(untracked_files=True), bool(stash_cnt):
-        case True, True:
-            if cmd.confirm("Do you want to Drop"):
-                # repo.git.stash("drop")
-                raise cmd.error("Input: git stash drop")
-            cmd.cancel()
-        case True, False:
-            if cmd.confirm("Do you want to Stash?"):
-                repo.git.stash("push")
-                cmd.end()
-            else:
-                cmd.cancel()
-        case False, True:
-            if cmd.confirm("Do you want to Pop?"):
-                repo.git.stash("pop")
-                cmd.end()
-            else:
-                cmd.cancel()
-        case _:
-            raise TypeError
+    if stash_cnt == 1 and cmd.confirm("Do you want to Pop?"):
+        repo.git.stash("pop")
+        cmd.end()
+    elif stash_cnt == 0 and cmd.confirm("Do you want to Stash?"):
+        repo.git.stash("push")
+        cmd.end()
+    else:
+        cmd.cancel()
 
 
 @app.command()
@@ -362,7 +368,11 @@ def submod(*, remote: bool = False) -> None:
     if remote:
         cmd.warn("Update all submodules to remote HEAD")
         args.append("--remote")
-    repo.git.submodule(args)
+    try:
+        repo.git.submodule(args)
+    except git.GitCommandError as e:
+        cmd.fail(e)
+        raise cmd.error("You need to find help") from e
     cmd.end()
 
 
@@ -370,9 +380,13 @@ def submod(*, remote: bool = False) -> None:
 def zen() -> None:
     z = [
         "Always keep tree-like structure, linear history",
+        "始终保持树形结构, 线性历史",
         "One commit doesn't matter, all commits matter",
+        "一次修改无关紧要, 总的修改才重要",
         "Only 3 branches: yours, your-origin and master",
+        "只有 3 个分支: 你的分支, 你的远程分支和主分支",
         "Take ownership of your branch",
+        "自己的分支自己负责",
         r"         ",
         r"    |    ",
         r"    ●    ",
@@ -387,6 +401,63 @@ def zen() -> None:
     ]
     for line in z:
         typer.echo(line)
+
+
+@app.command()
+def scoop() -> None:
+    cmd = Cmd.SCOOP
+    cmd.start()
+    cmd.run("powershell scripts/install_scoop.ps1")
+    cmd.end()
+
+
+@app.command()
+def env() -> None:
+    cmd = Cmd.ENV
+    cmd.start()
+    submod()
+    cmd.run("uv sync", use_proxy=True)
+    cmd.end()
+    submod()
+
+
+@app.command()
+def delete() -> None:
+    cmd = Cmd.DELETE
+    cmd.start()
+
+    dirs = [Path("logs"), Path("output")]
+    for d in dirs:
+        if d.exists():
+            rmtree(d)
+        d.mkdir(parents=True, exist_ok=True)
+        gitkeep = d / ".gitkeep"
+        gitkeep.touch()
+
+    force_dirs = [Path("MsCamRegLog")]
+    for d in force_dirs:
+        if d.exists():
+            rmtree(d)
+
+    cmd.end()
+
+
+@app.command()
+def check(dirs: str = "src tests") -> None:
+    cmd = Cmd.CHECK
+    cmd.start()
+
+    venv = Path(".venv") / "Scripts"
+    ruff = venv / "ruff"
+    pyright = venv / "pyright"
+    py = venv / "python"
+    try:
+        cmd.run(f"{ruff} check {dirs} --fix")
+        cmd.run(f"{pyright} {dirs} --pythonpath {py}")
+    except subprocess.CalledProcessError as e:
+        cmd.fail(e)
+        return
+    cmd.end()
 
 
 if __name__ == "__main__":
