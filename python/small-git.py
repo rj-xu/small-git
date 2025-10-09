@@ -3,7 +3,7 @@ import subprocess
 from enum import StrEnum
 from pathlib import Path
 from shutil import rmtree
-from typing import cast
+from typing import Annotated, cast
 
 import git
 import typer
@@ -67,7 +67,7 @@ class Cmd(StrEnum):
     PUSH       = "⬆️  Push"
     RESET      = "🪓 Reset"
     FORCE_PUSH = "⏫ Force-Push"
-    SQUASH     = "🧹 Squash"
+    SQUASH     = "🔨 Squash"
     ABORT      = "🛑 Abort"
     REBASE     = "🌳 Rebase"
     FETCH      = "🔃 Fetch"
@@ -129,7 +129,7 @@ def show():
 
 
 @app.command()
-def commit(msg: str = "update") -> None:
+def commit(msg: Annotated[str, typer.Argument()] = "update") -> None:
     if not is_dirty():
         return
 
@@ -316,7 +316,7 @@ def sync() -> bool:
                 if my.commit != my_origin.commit:
                     push()
             else:
-                cmd.warn("You need to choose {Cmd.FORCE_PUSH} or {Cmd.PULL}")
+                cmd.warn(f"You need to choose {Cmd.FORCE_PUSH} or {Cmd.PULL}")
                 cmd.cancel()
                 return False
         else:
@@ -415,10 +415,8 @@ def scoop() -> None:
 def env() -> None:
     cmd = Cmd.ENV
     cmd.start()
-    submod()
-    cmd.run("uv sync", use_proxy=True)
+    cmd.run("uv sync")
     cmd.end()
-    submod()
 
 
 @app.command()
@@ -443,7 +441,7 @@ def delete() -> None:
 
 
 @app.command()
-def check(dirs: str = "src tests") -> None:
+def check(dirs: Annotated[str, typer.Argument()] = "src tests") -> None:
     cmd = Cmd.CHECK
     cmd.start()
 
