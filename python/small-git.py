@@ -1,4 +1,4 @@
-import os
+import os  # noqa: INP001
 import subprocess
 from enum import StrEnum
 from pathlib import Path
@@ -81,7 +81,7 @@ class Cmd(StrEnum):
     # fmt: on
 
     def start(self):
-        typer.echo(f"{self} START")
+        typer.secho(f"{self} START", fg=typer.colors.GREEN)
 
     def end(self):
         typer.secho(f"{self} END", fg=typer.colors.GREEN)
@@ -91,19 +91,19 @@ class Cmd(StrEnum):
 
     def fail(self, e: Exception):
         typer.echo(e)
-        typer.secho(f"{self} FAILED", bg=typer.colors.RED)
+        typer.secho(f"{self} FAILED", fg=typer.colors.RED)
 
     def info(self, msg: str):
-        typer.echo(f"{self}: {msg}")
+        typer.secho(f"{self}: {msg}", fg=typer.colors.BLUE)
 
     def warn(self, msg: str):
-        typer.secho(f"🚨 {msg}", bg=typer.colors.YELLOW)
+        typer.secho(f"🚨 {msg}", fg=typer.colors.YELLOW)
 
     def error(self, msg: str):
         return RuntimeError(f"💥 {msg}")
 
     def confirm(self, msg: str) -> bool:
-        s = typer.style(f"✅ {msg}", bg=typer.colors.BLUE)
+        s = typer.style(f"✅ {msg}", fg=typer.colors.BLUE)
         return typer.confirm(s)
 
     def run(self, cmds: str | list[str], *, use_proxy: bool = False):
@@ -136,7 +136,7 @@ def commit(msg: Annotated[str, typer.Argument()] = "update") -> None:
     cmd = Cmd.COMMIT
     cmd.start()
 
-    cmd.info(f"Message: {msg}")
+    cmd.info(f"{msg}")
     if not repo.index.diff("HEAD"):
         repo.git.add(A=True)
     repo.index.commit(msg)
@@ -158,7 +158,7 @@ def push() -> None:
     cmd.end()
 
 
-def reset_to(c: git.Commit, *, need_commit: bool = True) -> None:
+def reset_to(c: git.Commit, *, need_commit: bool = True, need_push: bool = True) -> None:
     if my.commit == c:
         return
 
@@ -169,13 +169,14 @@ def reset_to(c: git.Commit, *, need_commit: bool = True) -> None:
 
     if need_commit:
         commit(f"reset to {c.hexsha[:8]}")
+    if need_push:
+        force_push()
 
 
 @app.command()
 def reset() -> None:
     base = find_base()
-    reset_to(base, need_commit=False)
-    Cmd.RESET.warn(f"You need to {Cmd.COMMIT} and {Cmd.FORCE_PUSH} later")
+    reset_to(base, need_commit=False, need_push=True)
 
 
 @app.command()
@@ -206,8 +207,7 @@ def squash() -> None:
     cmd = Cmd.SQUASH
     cmd.start()
     base = find_base()
-    reset_to(base)
-    force_push()
+    reset_to(base, need_commit=True, need_push=True)
     cmd.end()
 
 
@@ -256,7 +256,7 @@ def try_rebase(c: git.Commit, base: git.Commit) -> bool:
 
     cmd.warn("Found 💣 Conflict")
     if cmd.confirm(f"{Cmd.RESET} and {Cmd.REBASE} again?"):
-        reset_to(base)
+        reset_to(base, need_commit=True, need_push=True)
         if not rebase_to(c):
             raise cmd.error(f"You need to resolve conflict manually, then {Cmd.SYNC}")
         return True
@@ -273,54 +273,49 @@ def fetch() -> None:
 
 @app.command()
 def sync() -> bool:
+    fetch()
+
+    if my.name not in origin.refs:
+        return True
+
     cmd = Cmd.SYNC
     cmd.start()
 
-    fetch()
-
     base = find_base()
 
-    if my.name not in origin.refs:
-        if base == master.commit or try_rebase(master.commit, base):
-            push()
+    if base != master.commit:
+        cmd.warn(f"Your branch is out-of-date, need to {Cmd.REBASE} later")
+
+    my_origin = origin.refs[my.name]
+
+    my_ahead = count_commits(my_origin.commit, my.commit)
+    my_origin_ahead = count_commits(my.commit, my_origin.commit)
+
+    if my_ahead > 0 and my_origin_ahead == 0:
+        cmd.info(f"{Cmd.PUSH} your branch")
+        push()
+    elif my_ahead == 0 and my_origin_ahead > 0:
+        cmd.info(f"{Cmd.PULL} your-origin branch")
+        pull()
+    elif my_ahead > 0 and my_origin_ahead > 0:
+        cmd.warn("Found 🍴 Fork")
+
+        # NOTE: never rebase others banch
+        if (base.committed_datetime > find_base(my_origin, master).committed_datetime) or (
+            cmd.confirm(f"{Cmd.FORCE_PUSH} your branch?")
+        ):
+            force_push()
+        elif (cmd.confirm(f"{Cmd.PULL} your-origin branch?")) and (
+            try_rebase(my_origin.commit, find_base(my, my_origin))
+        ):
+            if my.commit != my_origin.commit:
+                push()
         else:
-            cmd.warn("You need to choose {Cmd.RESET} and {Cmd.REBASE}")
+            cmd.warn(f"You need to choose {Cmd.FORCE_PUSH} or {Cmd.PULL}")
             cmd.cancel()
             return False
     else:
-        if base != master.commit:
-            cmd.warn("Your branch is out-of-date, need to {Cmd.REBASE} later")
-
-        my_origin = origin.refs[my.name]
-
-        my_ahead = count_commits(my_origin.commit, my.commit)
-        my_origin_ahead = count_commits(my.commit, my_origin.commit)
-
-        if my_ahead > 0 and my_origin_ahead == 0:
-            cmd.info(f"{Cmd.PUSH} your branch")
-            push()
-        elif my_ahead == 0 and my_origin_ahead > 0:
-            cmd.info(f"{Cmd.PULL} your-origin branch")
-            pull()
-        elif my_ahead > 0 and my_origin_ahead > 0:
-            cmd.warn("Found 🍴 Fork")
-
-            # NOTE: never rebase others banch
-            if (base.committed_datetime > find_base(my_origin, master).committed_datetime) or (
-                cmd.confirm(f"{Cmd.FORCE_PUSH} your branch?")
-            ):
-                force_push()
-            elif (cmd.confirm(f"{Cmd.PULL} your-origin branch?")) and (
-                try_rebase(my_origin.commit, find_base(my, my_origin))
-            ):
-                if my.commit != my_origin.commit:
-                    push()
-            else:
-                cmd.warn(f"You need to choose {Cmd.FORCE_PUSH} or {Cmd.PULL}")
-                cmd.cancel()
-                return False
-        else:
-            cmd.info("Your-origin branch is already up-to-date")
+        cmd.info("Your-origin branch is already up-to-date")
 
     cmd.end()
     return True
@@ -333,11 +328,15 @@ def rebase() -> None:
 
     base = find_base()
     if base == master.commit:
+        if my.name not in origin.refs:
+            push()
         return
 
     # origin.pull(master.name, rebase=True, autostash=True)
     if try_rebase(master.commit, base):
         force_push()
+        submod(force=True, need_sync=False)
+        env()
 
 
 @app.command()
@@ -358,13 +357,15 @@ def stash() -> None:
 
 
 @app.command()
-def submod(*, remote: bool = False) -> None:
-    if not sync():
+def submod(*, force: bool = True, remote: bool = False, need_sync: bool = True) -> None:
+    if need_sync and not sync():
         return
 
     cmd = Cmd.SUBMOD
     cmd.start()
-    args = ["update", "--init", "--recursive", "--force"]
+    args = ["update", "--init", "--recursive"]
+    if force:
+        args.append("--force")
     if remote:
         cmd.warn("Update all submodules to remote HEAD")
         args.append("--remote")
@@ -445,13 +446,10 @@ def check(dirs: Annotated[str, typer.Argument()] = "src tests") -> None:
     cmd = Cmd.CHECK
     cmd.start()
 
-    venv = Path(".venv") / "Scripts"
-    ruff = venv / "ruff"
-    pyright = venv / "pyright"
-    py = venv / "python"
     try:
-        cmd.run(f"{ruff} check {dirs} --fix")
-        cmd.run(f"{pyright} {dirs} --pythonpath {py}")
+        cmd.run(f"uv run ruff check {dirs} --fix")
+        cmd.run(f"uv run pyright {dirs}")
+        # cmd.run("uv run pytest --collect-only")
     except subprocess.CalledProcessError as e:
         cmd.fail(e)
         return
