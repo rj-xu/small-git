@@ -8,3 +8,53 @@ dependencies = [
     "gitpython>=3.1.45",
     "typer>=0.18.0",
 ]
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "ANN",
+    "D",
+    "E741",
+    "EM101",
+    "EM102",
+    "ERA001",
+    "C901",
+    "FIX",
+    "G004",
+    "PGH003",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "PLR2004",
+    "RET504",
+    "RUF018",
+    "S101",
+    "T201",
+    "TD",
+    "TRY003",
+]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+
+deprecateTypingAliases = true
+enableExperimentalFeatures = true
+
+reportCallInDefaultInitializer = "warning"
+reportImplicitOverride = "none"
+reportImplicitStringConcatenation = "none"
+reportImportCycles = "none"
+reportMissingSuperCall = "none"
+reportPropertyTypeMismatch = "error"
+reportUninitializedInstanceVariable = "none"
+reportUnnecessaryTypeIgnoreComment = "warning"
+reportUnreachable = "none"
+reportUnusedCallResult = "none"
