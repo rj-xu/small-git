@@ -8,8 +8,9 @@ from typing import Annotated, cast
 import git
 import typer
 
-app = typer.Typer()
+MASTER = "master"
 
+app = typer.Typer()
 
 repo = git.Repo(".")
 assert repo.index.unmerged_blobs() == {}
@@ -18,15 +19,12 @@ assert repo.index.unmerged_blobs() == {}
 assert "origin" in repo.remotes
 origin = repo.remotes["origin"]
 
-if "master" in origin.refs:
-    master = origin.refs["master"]
-elif "main" in origin.refs:
-    master = origin.refs["main"]
-else:
+if MASTER not in origin.refs:
     raise ValueError
+master = origin.refs[MASTER]
 
 my = repo.active_branch
-assert my.name not in ("master", "main")
+assert my.name != MASTER
 
 # config_reader = repo.config_reader()
 # temp = config_reader.get_value("user", "name", default=None)
@@ -159,13 +157,11 @@ def push() -> None:
 
 
 def reset_to(c: git.Commit, *, need_commit: bool = True, need_push: bool = True) -> None:
-    if my.commit == c:
-        return
-
-    cmd = Cmd.RESET
-    cmd.start()
-    repo.git.reset(c)
-    cmd.end()
+    if my.commit != c:
+        cmd = Cmd.RESET
+        cmd.start()
+        repo.git.reset(c)
+        cmd.end()
 
     if need_commit:
         commit(f"reset to {c.hexsha[:8]}")
@@ -332,9 +328,9 @@ def rebase() -> None:
             push()
         return
 
-    # origin.pull(master.name, rebase=True, autostash=True)
     if try_rebase(master.commit, base):
-        force_push()
+        reset()
+        # force_push()
         submod(force=True, need_sync=False)
         env()
 
@@ -447,6 +443,7 @@ def check(dirs: Annotated[str, typer.Argument()] = "src tests") -> None:
     cmd.start()
 
     try:
+        cmd.run(f"uv run ruff format {dirs}")
         cmd.run(f"uv run ruff check {dirs} --fix")
         cmd.run(f"uv run pyright {dirs}")
         # cmd.run("uv run pytest --collect-only")
