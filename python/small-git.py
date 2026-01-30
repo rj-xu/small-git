@@ -68,8 +68,9 @@ class Cmd(StrEnum):
     SQUASH     = "🔨 Squash"
     ABORT      = "🛑 Abort"
     REBASE     = "🌳 Rebase"
-    FETCH      = "🔃 Fetch"
-    SYNC       = "🔄️ Sync"
+    MERGE      = "🔀 Merge"
+    FETCH      = "⏬ Fetch"
+    SYNC       = "🔃 Sync"
     STASH      = "🗄️  Stash"
     SUBMOD     = "📦 Submodule"
     SCOOP      = "🥄 Scoop"
@@ -156,23 +157,28 @@ def push() -> None:
     cmd.end()
 
 
-def reset_to(c: git.Commit, *, need_commit: bool = True, need_push: bool = True) -> None:
+def reset_to(c: git.Commit | None = None, *, need_commit: bool, need_push: bool) -> None:
+    if c is None:
+        c = find_base()
+
     if my.commit != c:
         cmd = Cmd.RESET
         cmd.start()
         repo.git.reset(c)
         cmd.end()
 
+    submod(force=True)
+
     if need_commit:
         commit(f"reset to {c.hexsha[:8]}")
+
     if need_push:
         force_push()
 
 
 @app.command()
-def reset() -> None:
-    base = find_base()
-    reset_to(base, need_commit=False, need_push=True)
+def reset():
+    reset_to(need_commit=False, need_push=True)
 
 
 @app.command()
@@ -202,8 +208,7 @@ def force_push() -> bool:
 def squash() -> None:
     cmd = Cmd.SQUASH
     cmd.start()
-    base = find_base()
-    reset_to(base, need_commit=True, need_push=True)
+    reset_to(need_commit=True, need_push=True)
     cmd.end()
 
 
@@ -240,6 +245,11 @@ def rebase_to(c: git.Commit) -> bool:
         return False
 
     cmd.end()
+
+    force_push()
+    submod(force=True)
+    env()
+
     return True
 
 
@@ -304,8 +314,7 @@ def sync() -> bool:
         elif (cmd.confirm(f"{Cmd.PULL} your-origin branch?")) and (
             try_rebase(my_origin.commit, find_base(my, my_origin))
         ):
-            if my.commit != my_origin.commit:
-                push()
+            pass
         else:
             cmd.warn(f"You need to choose {Cmd.FORCE_PUSH} or {Cmd.PULL}")
             cmd.cancel()
@@ -328,11 +337,18 @@ def rebase() -> None:
             push()
         return
 
-    if try_rebase(master.commit, base):
-        reset()
-        # force_push()
-        submod(force=True, need_sync=False)
-        env()
+    try_rebase(master.commit, base)
+
+
+@app.command()
+def merge() -> None:
+    cmd = Cmd.MERGE
+    cmd.start()
+    rebase()
+    reset()
+    check(strict=True)
+    # webbrowser.open("http://10.6.6.91/system/tok/sys_test_bench/merge_requests/new")
+    cmd.end()
 
 
 @app.command()
@@ -353,10 +369,7 @@ def stash() -> None:
 
 
 @app.command()
-def submod(*, force: bool = True, remote: bool = False, need_sync: bool = True) -> None:
-    if need_sync and not sync():
-        return
-
+def submod(*, force: bool = True, remote: bool = False) -> None:
     cmd = Cmd.SUBMOD
     cmd.start()
     args = ["update", "--init", "--recursive"]
@@ -376,25 +389,9 @@ def submod(*, force: bool = True, remote: bool = False, need_sync: bool = True) 
 @app.command()
 def zen() -> None:
     z = [
-        "Always keep tree-like structure, linear history",
         "始终保持树形结构, 线性历史",
-        "One commit doesn't matter, all commits matter",
-        "一次修改无关紧要, 总的修改才重要",
-        "Only 3 branches: yours, your-origin and master",
         "只有 3 个分支: 你的分支, 你的远程分支和主分支",
-        "Take ownership of your branch",
         "自己的分支自己负责",
-        r"         ",
-        r"    |    ",
-        r"    ●    ",
-        r" |  |    ",
-        r" ●  ●    ",
-        r"  \ |  | ",
-        r"    ●  ● ",
-        r"    | /  ",
-        r"    ●    ",
-        r"    |    ",
-        r"         ",
     ]
     for line in z:
         typer.echo(line)
@@ -438,7 +435,7 @@ def delete() -> None:
 
 
 @app.command()
-def check(dirs: Annotated[str, typer.Argument()] = "src tests") -> None:
+def check(dirs: Annotated[str, typer.Argument()] = "src tests", *, strict: bool = False) -> None:
     cmd = Cmd.CHECK
     cmd.start()
 
@@ -446,7 +443,9 @@ def check(dirs: Annotated[str, typer.Argument()] = "src tests") -> None:
         cmd.run(f"uv run ruff format {dirs}")
         cmd.run(f"uv run ruff check {dirs} --fix")
         cmd.run(f"uv run pyright {dirs}")
-        # cmd.run("uv run pytest --collect-only")
+        if strict:
+            cmd.run(f"uv run pylint {dirs}")
+            cmd.run("uv run pytest --collect-only")
     except subprocess.CalledProcessError as e:
         cmd.fail(e)
         return
