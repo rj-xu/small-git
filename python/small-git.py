@@ -251,7 +251,7 @@ def rebase_or_reset(c: git.Commit, base: git.Commit) -> bool:
 
     abort()
 
-    if not cmd.confirm(f"Found 💣 Conflicts. Do you want to {Cmd.RESET} and {Cmd.REBASE}?"):
+    if not cmd.confirm(f"Found 💣 conflicts. Do you want to {Cmd.RESET} and {Cmd.REBASE}?"):
         cmd.cancel()
         return False
 
@@ -259,9 +259,9 @@ def rebase_or_reset(c: git.Commit, base: git.Commit) -> bool:
     reset_to(base, need_commit=True, need_push=False)
 
     if not rebase_to(c):
-        REPO.git.push("origin", "--delete", MY.name)
+        # REPO.git.push("origin", "--delete", MY.name)
         # FIXME
-        cmd.warn(f"Please resolve conflicts manually, then {Cmd.SYNC}")
+        cmd.warn(f"Please resolve 💣 conflicts manually, then {Cmd.REBASE}")
         return False
     return True
 
