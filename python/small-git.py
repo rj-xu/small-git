@@ -235,14 +235,12 @@ def rebase_to(c: git.Commit) -> bool:
     except git.GitCommandError as e:
         cmd.fail(e)
         return False
-
-    cmd.end()
-
-    force_push()
-    submod(force=True)
-    env()
-
-    return True
+    else:
+        submod()
+        env()
+        force_push()
+        cmd.end()
+        return True
 
 
 def rebase_or_reset(c: git.Commit, base: git.Commit) -> bool:
@@ -250,17 +248,21 @@ def rebase_or_reset(c: git.Commit, base: git.Commit) -> bool:
 
     if rebase_to(c):
         return True
+
     abort()
 
-    if cmd.confirm(f"Found 💣 Conflicts. Do you want to {Cmd.RESET} and {Cmd.REBASE}?"):
-        submod(force=True)
-        reset_to(base, need_commit=True, need_push=False)
+    if not cmd.confirm(f"Found 💣 Conflicts. Do you want to {Cmd.RESET} and {Cmd.REBASE}?"):
+        cmd.cancel()
+        return False
+
+    reset_to(base, need_commit=True, need_push=False)
+    submod()
+    if not rebase_to(c):
         REPO.git.push("origin", "--delete", MY.name)
-        if not rebase_to(c):
-            raise cmd.error(f"Please resolve conflicts manually, then {Cmd.SYNC}")
-        return True
-    cmd.cancel()
-    return False
+        # FIXME
+        cmd.warn(f"Please resolve conflicts manually, then {Cmd.SYNC}")
+        return False
+    return True
 
 
 def fetch() -> None:
@@ -299,7 +301,7 @@ def sync() -> bool:
     elif my_ahead > 0 and my_origin_ahead > 0:
         cmd.warn("Found 🍴 Fork")
 
-        if (base.committed_datetime > find_base(my_origin, MASTER).committed_datetime) and (
+        if (base.committed_datetime > find_base(my_origin, MASTER).committed_datetime) or (
             cmd.confirm(f"{Cmd.FORCE_PUSH} your branch?")
         ):
             force_push()
@@ -360,12 +362,10 @@ def stash_pop(msg: str | None = None) -> None:
 
 
 @app.command()
-def submod(*, force: bool) -> None:
+def submod() -> None:
     cmd = Cmd.SUBMOD
     cmd.start()
-    args = ["update", "--init", "--recursive"]
-    if force:
-        args.append("--force")
+    args = ["update", "--init", "--recursive", "--force"]
     try:
         REPO.git.submodule(args)
     except git.GitCommandError as e:
