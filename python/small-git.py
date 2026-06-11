@@ -255,8 +255,9 @@ def rebase_or_reset(c: git.Commit, base: git.Commit) -> bool:
         cmd.cancel()
         return False
 
-    reset_to(base, need_commit=True, need_push=False)
     submod()
+    reset_to(base, need_commit=True, need_push=False)
+
     if not rebase_to(c):
         REPO.git.push("origin", "--delete", MY.name)
         # FIXME
@@ -327,6 +328,8 @@ def rebase() -> None:
 
     base = find_base()
     if base == MASTER.commit:
+        submod()
+        env()
         push()
     else:
         rebase_or_reset(MASTER.commit, base)
