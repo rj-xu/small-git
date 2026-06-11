@@ -1,0 +1,109 @@
+{
+    "[python]": {
+        "editor.codeActionsOnSave": {
+            "source.fixAll": "explicit"
+        },
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true
+    },
+    "editor.formatOnSave": true,
+    "editor.renderControlCharacters": true,
+    "editor.renderWhitespace": "all",
+    "files.autoSave": "afterDelay",
+    "files.insertFinalNewline": true,
+    "files.trimFinalNewlines": true,
+    "files.trimTrailingWhitespace": true,
+    "git-graph.dialog.createBranch.checkOut": true,
+    "git-graph.repository.fetchAndPrune": true,
+    "git-graph.repository.fetchAndPruneTags": true,
+    "git.allowForcePush": true,
+    "git.autofetch": true,
+    "git.autoStash": true,
+    "git.blame.editorDecoration.enabled": true,
+    "git.closeDiffOnOperation": true,
+    "git.confirmSync": false,
+    "git.enableSmartCommit": true,
+    "git.fetchOnPull": true,
+    "git.followTagsWhenSync": true,
+    "git.mergeEditor": true,
+    "git.postCommitCommand": "push",
+    "git.pruneOnFetch": true,
+    "git.pullBeforeCheckout": true,
+    // "git.rebaseWhenSync": true,
+    "git.replaceTagsWhenPull": true,
+    "git.showPushSuccessNotification": true,
+    "git.smartCommitChanges": "all",
+    "gitmoji.addCustomEmoji": [
+        {
+            "description": "添加新功能",
+            "emoji": "✅"
+        },
+        {
+            "description": "重构或增强",
+            "emoji": "⚡"
+        },
+        {
+            "description": "修复 Bug",
+            "emoji": "🐛"
+        },
+        {
+            "description": "升级依赖",
+            "emoji": "⬆️"
+        },
+        {
+            "description": "修改配置",
+            "emoji": "🛠️"
+        },
+        {
+            "description": "清理代码",
+            "emoji": "🧹"
+        },
+        {
+            "description": "紧急修复",
+            "emoji": "🚑"
+        },
+        {
+            "description": "添加注释或文档",
+            "emoji": "📝"
+        },
+        {
+            "description": "版本发布",
+            "emoji": "🎉"
+        }
+    ],
+    "gitmoji.onlyUseCustomEmoji": true,
+    "python.analysis.autoFormatStrings": true,
+    "python.analysis.completeFunctionParens": false,
+    "python.analysis.inlayHints.functionReturnTypes": true,
+    "python.analysis.inlayHints.variableTypes": false,
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    // "python.languageServer": "None",
+    "python.terminal.activateEnvironment": false,
+    // "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.useEnvironmentsExtension": false,
+    "ruff.importStrategy": "useBundled",
+    "task.problemMatchers.neverPrompt": {
+        "shell": true
+    },
+    "todo-tree.filtering.ignoreGitSubmodules": true,
+    "todo-tree.highlights.customHighlight": {
+        "FIXME": {
+            "background": "#f06292",
+            "icon": "alert-fill",
+            "iconColour": "#f06292"
+        },
+        "NOTE": {
+            "background": "#3390ff",
+            "icon": "bookmark",
+            "iconColour": "#3390ff"
+        },
+        "TODO": {
+            "background": "#ffbd2a",
+            "icon": "bell",
+            "iconColour": "#ffbd2a"
+        }
+    },
+    "workbench.colorTheme": "One Dark Pro",
+    "workbench.iconTheme": "material-icon-theme"
+}

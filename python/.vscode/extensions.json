@@ -1,0 +1,13 @@
+{
+    "recommendations": [
+        "charliermarsh.ruff",
+        "gruntfuggly.todo-tree",
+        "lmcarreiro.vscode-smart-column-indenter",
+        "mhutchie.git-graph",
+        "ms-python.pylint",
+        "ms-python.vscode-pylance",
+        "pkief.material-icon-theme",
+        "seatonjiang.gitmoji-vscode",
+        "zhuangtongfa.material-theme",
+    ]
+}

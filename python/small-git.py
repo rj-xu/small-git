@@ -1,61 +1,49 @@
 import os  # noqa: INP001
 import subprocess
+import time
 from enum import StrEnum
 from pathlib import Path
 from shutil import rmtree
-from typing import Annotated, cast
+from typing import Annotated
 
 import git
 import typer
 
-MASTER = "master"
+MASTER_BRANCH = "master"
 
 app = typer.Typer()
 
-repo = git.Repo(".")
-assert repo.index.unmerged_blobs() == {}
+REPO = git.Repo(".")
+assert REPO.index.unmerged_blobs() == {}
 # assert repo.git.stash("list") == ""
 
-assert "origin" in repo.remotes
-origin = repo.remotes["origin"]
+assert "origin" in REPO.remotes
+ORIGIN = REPO.remotes["origin"]
 
-if MASTER not in origin.refs:
+if MASTER_BRANCH not in ORIGIN.refs:
     raise ValueError
-master = origin.refs[MASTER]
+MASTER = ORIGIN.refs[MASTER_BRANCH]
 
-my = repo.active_branch
-assert my.name != MASTER
+MY = REPO.active_branch
+assert MY.name != MASTER_BRANCH
 
-# config_reader = repo.config_reader()
-# temp = config_reader.get_value("user", "name", default=None)
-# assert isinstance(temp, str)
-# user = temp
-
-# temp = config_reader.get_value("user", "email", default=None)
-# assert isinstance(temp, str)
-# email = temp
+# config_reader = REPO.config_reader()
+# USER_NAME = cast("str", config_reader.get_value("user", "name", default=None))
+# USER_EMAIL = cast("str", config_reader.get_value("user", "email", default=None))
 
 
-def find_base(b0: git.Head = my, b1: git.Head = master):
-    bases = repo.merge_base(b0, b1)
+def find_base(b0: git.Head = MY, b1: git.Head = MASTER):
+    bases = REPO.merge_base(b0, b1)
     assert len(bases) == 1
     return bases[0]
 
 
 def is_dirty() -> bool:
-    return repo.is_dirty(untracked_files=True)
+    return REPO.is_dirty(untracked_files=True)
 
 
 def count_commits(c0: git.Commit, c1: git.Commit):
-    return len(list(repo.iter_commits(f"{c0}..{c1}")))
-
-
-# def has_conflict(c0: git.Commit, c1: git.Commit) -> bool:
-#     return repo.git.merge_tree(c0.name, c1.name, quiet=True) != 0
-
-
-# def commit_info(c: git.Commit):
-#     return f"[ {c.message} ][ {c.author} ][ {c.authored_datetime} ][ {c.hexsha[:8]} ]"
+    return len(list(REPO.iter_commits(f"{c0}..{c1}")))
 
 
 class Cmd(StrEnum):
@@ -64,18 +52,19 @@ class Cmd(StrEnum):
     PULL       = "⬇️  Pull"
     PUSH       = "⬆️  Push"
     RESET      = "🪓 Reset"
-    FORCE_PUSH = "⏫ Force-Push"
+    FORCE_PUSH = "⏫ Force Push"
     SQUASH     = "🔨 Squash"
     ABORT      = "🛑 Abort"
     REBASE     = "🌳 Rebase"
     MERGE      = "🔀 Merge"
     FETCH      = "⏬ Fetch"
     SYNC       = "🔃 Sync"
-    STASH      = "🗄️  Stash"
-    SUBMOD     = "📦 Submodule"
+    STASH_PUSH = "🗄️  Stash Push"
+    STASH_POP  = "🗄️  Stash Pop"
+    SUBMOD     = "📦 SubMod"
     SCOOP      = "🥄 Scoop"
     ENV        = "🌏 Env"
-    DELETE     = "🗑️  Delete"
+    CLEAN      = "🗑️  Clean"
     CHECK      = "🚓 Check"
     # fmt: on
 
@@ -136,9 +125,9 @@ def commit(msg: Annotated[str, typer.Argument()] = "update") -> None:
     cmd.start()
 
     cmd.info(f"{msg}")
-    if not repo.index.diff("HEAD"):
-        repo.git.add(A=True)
-    repo.index.commit(msg)
+    if not REPO.index.diff("HEAD"):
+        REPO.git.add(A=True)
+    REPO.index.commit(msg)
 
     cmd.end()
 
@@ -146,31 +135,55 @@ def commit(msg: Annotated[str, typer.Argument()] = "update") -> None:
 def pull() -> None:
     cmd = Cmd.PULL
     cmd.start()
-    origin.pull(rebase=True, autostash=True)
+    ORIGIN.pull(rebase=True, autostash=True)
     cmd.end()
 
 
 def push() -> None:
     cmd = Cmd.PUSH
     cmd.start()
-    origin.push(my.name)
+    ORIGIN.push(MY.name)
     cmd.end()
+
+
+@app.command()
+def force_push() -> bool:
+    cmd = Cmd.FORCE_PUSH
+    cmd.start()
+
+    try:
+        ORIGIN.push(MY.name, force_with_lease=True)
+    except git.GitCommandError as e:
+        cmd.fail(e)
+        if (
+            cmd.confirm("Someone commited into your-origin, OVERWRITE his code?")
+            and cmd.confirm("His code may be usefull, continue?")
+            and cmd.confirm("Are you sure?")
+        ):
+            # origin.push(my.name, force=True)
+            raise cmd.error("You can input: git push --force") from e
+        cmd.cancel()
+        return False
+
+    cmd.end()
+    return True
 
 
 def reset_to(c: git.Commit | None = None, *, need_commit: bool, need_push: bool) -> None:
     if c is None:
         c = find_base()
 
-    if my.commit != c:
-        cmd = Cmd.RESET
-        cmd.start()
-        repo.git.reset(c)
-        cmd.end()
+    if MY.commit == c:
+        return
 
-    submod(force=True)
+    cmd = Cmd.RESET
+    cmd.start()
+    REPO.git.reset(c)
+    cmd.end()
 
     if need_commit:
-        commit(f"reset to {c.hexsha[:8]}")
+        msg = f"reset to {c.hexsha[:8]}"
+        commit(msg)
 
     if need_push:
         force_push()
@@ -182,51 +195,30 @@ def reset():
 
 
 @app.command()
-def force_push() -> bool:
-    cmd = Cmd.FORCE_PUSH
-    cmd.start()
-
-    try:
-        origin.push(my.name, force_with_lease=True)
-    except git.GitCommandError as e:
-        cmd.fail(e)
-        if (
-            cmd.confirm("Someone commited into your-origin, OVERWRITE his code?")
-            and cmd.confirm("His code may be usefull, continue?")
-            and cmd.confirm("Are you sure?")
-        ):
-            # origin.push(my.name, force=True)
-            raise cmd.error("Input: git push --force") from e
-        cmd.cancel()
-        return False
-
-    cmd.end()
-    return True
-
-
-@app.command()
 def squash() -> None:
     cmd = Cmd.SQUASH
     cmd.start()
+    msg = stash_push()
     reset_to(need_commit=True, need_push=True)
+    stash_pop(msg)
     cmd.end()
 
 
 @app.command()
 def abort() -> None:
-    rebase_merge_dir = Path(repo.git_dir) / "rebase-merge"
-    rebase_apply_dir = Path(repo.git_dir) / "rebase-apply"
+    rebase_merge_dir = Path(REPO.git_dir) / "rebase-merge"
+    rebase_apply_dir = Path(REPO.git_dir) / "rebase-apply"
 
-    in_rebase = rebase_merge_dir.exists() or rebase_apply_dir.exists()
+    is_rebasing = rebase_merge_dir.exists() or rebase_apply_dir.exists()
 
-    if not in_rebase:
+    if not is_rebasing:
         return
 
     cmd = Cmd.ABORT
     cmd.start()
 
     try:
-        repo.git.rebase(abort=True)
+        REPO.git.rebase(abort=True)
     except git.GitCommandError as e:
         cmd.fail(e)
         raise cmd.error("You need to find help") from e
@@ -239,7 +231,7 @@ def rebase_to(c: git.Commit) -> bool:
     cmd.start()
 
     try:
-        repo.git.rebase(c, autostash=True)
+        REPO.git.rebase(c, autostash=True)
     except git.GitCommandError as e:
         cmd.fail(e)
         return False
@@ -253,18 +245,19 @@ def rebase_to(c: git.Commit) -> bool:
     return True
 
 
-def try_rebase(c: git.Commit, base: git.Commit) -> bool:
+def rebase_or_reset(c: git.Commit, base: git.Commit) -> bool:
     cmd = Cmd.REBASE
 
     if rebase_to(c):
         return True
     abort()
 
-    cmd.warn("Found 💣 Conflict")
-    if cmd.confirm(f"{Cmd.RESET} and {Cmd.REBASE} again?"):
-        reset_to(base, need_commit=True, need_push=True)
+    if cmd.confirm(f"Found 💣 Conflicts. Do you want to {Cmd.RESET} and {Cmd.REBASE}?"):
+        submod(force=True)
+        reset_to(base, need_commit=True, need_push=False)
+        REPO.git.push("origin", "--delete", MY.name)
         if not rebase_to(c):
-            raise cmd.error(f"You need to resolve conflict manually, then {Cmd.SYNC}")
+            raise cmd.error(f"Please resolve conflicts manually, then {Cmd.SYNC}")
         return True
     cmd.cancel()
     return False
@@ -273,7 +266,7 @@ def try_rebase(c: git.Commit, base: git.Commit) -> bool:
 def fetch() -> None:
     cmd = Cmd.FETCH
     cmd.start()
-    origin.fetch(prune=True, tags=True, prune_tags=True)
+    ORIGIN.fetch(prune=True, tags=True, prune_tags=True)
     cmd.end()
 
 
@@ -281,7 +274,7 @@ def fetch() -> None:
 def sync() -> bool:
     fetch()
 
-    if my.name not in origin.refs:
+    if MY.name not in ORIGIN.refs:
         return True
 
     cmd = Cmd.SYNC
@@ -289,38 +282,37 @@ def sync() -> bool:
 
     base = find_base()
 
-    if base != master.commit:
-        cmd.warn(f"Your branch is out-of-date, need to {Cmd.REBASE} later")
+    if base != MASTER.commit:
+        cmd.warn(f"Your branch is out of date, need to {Cmd.REBASE}")
 
-    my_origin = origin.refs[my.name]
+    my_origin = ORIGIN.refs[MY.name]
 
-    my_ahead = count_commits(my_origin.commit, my.commit)
-    my_origin_ahead = count_commits(my.commit, my_origin.commit)
+    my_ahead = count_commits(my_origin.commit, MY.commit)
+    my_origin_ahead = count_commits(MY.commit, my_origin.commit)
 
     if my_ahead > 0 and my_origin_ahead == 0:
         cmd.info(f"{Cmd.PUSH} your branch")
         push()
     elif my_ahead == 0 and my_origin_ahead > 0:
-        cmd.info(f"{Cmd.PULL} your-origin branch")
+        cmd.info(f"{Cmd.PULL} your origin branch")
         pull()
     elif my_ahead > 0 and my_origin_ahead > 0:
         cmd.warn("Found 🍴 Fork")
 
-        # NOTE: never rebase others banch
-        if (base.committed_datetime > find_base(my_origin, master).committed_datetime) or (
+        if (base.committed_datetime > find_base(my_origin, MASTER).committed_datetime) and (
             cmd.confirm(f"{Cmd.FORCE_PUSH} your branch?")
         ):
             force_push()
-        elif (cmd.confirm(f"{Cmd.PULL} your-origin branch?")) and (
-            try_rebase(my_origin.commit, find_base(my, my_origin))
-        ):
-            pass
+        elif cmd.confirm(f"{Cmd.PULL} your origin branch?"):
+            if not rebase_or_reset(my_origin.commit, find_base(MY, my_origin)):
+                cmd.cancel()
+                return False
         else:
             cmd.warn(f"You need to choose {Cmd.FORCE_PUSH} or {Cmd.PULL}")
             cmd.cancel()
             return False
     else:
-        cmd.info("Your-origin branch is already up-to-date")
+        cmd.info("Your origin branch is already up to date")
 
     cmd.end()
     return True
@@ -332,54 +324,50 @@ def rebase() -> None:
         return
 
     base = find_base()
-    if base == master.commit:
-        if my.name not in origin.refs:
-            push()
-        return
-
-    try_rebase(master.commit, base)
-
-
-@app.command()
-def merge() -> None:
-    cmd = Cmd.MERGE
-    cmd.start()
-    rebase()
-    reset()
-    check(strict=True)
-    # webbrowser.open("http://10.6.6.91/system/tok/sys_test_bench/merge_requests/new")
-    cmd.end()
-
-
-@app.command()
-def stash() -> None:
-    stash_cnt = len(cast("str", repo.git.stash("list")).splitlines())
-
-    cmd = Cmd.STASH
-    cmd.start()
-
-    if stash_cnt == 1 and cmd.confirm("Do you want to Pop?"):
-        repo.git.stash("pop")
-        cmd.end()
-    elif stash_cnt == 0 and cmd.confirm("Do you want to Stash?"):
-        repo.git.stash("push")
-        cmd.end()
+    if base == MASTER.commit:
+        push()
     else:
-        cmd.cancel()
+        rebase_or_reset(MASTER.commit, base)
+
+
+def stash_push(msg: str | None = None) -> str:
+    if msg is None:
+        msg = str(int(time.time()))
+    cmd = Cmd.STASH_PUSH
+    cmd.start()
+    REPO.git.stash("push", "--include-untracked", "-m", msg)
+    cmd.end()
+    return msg
+
+
+def stash_pop(msg: str | None = None) -> None:
+    cmd = Cmd.STASH_POP
+    cmd.start()
+    if msg is None:
+        REPO.git.stash("pop")
+    else:
+        stash_list = REPO.git.stash("list").splitlines()
+        target_stash = None
+        for i, stash_entry in enumerate(stash_list):
+            if msg in stash_entry:
+                target_stash = i
+                break
+        if target_stash is not None:
+            REPO.git.stash("pop", str(target_stash))
+            cmd.end()
+        else:
+            cmd.cancel()
 
 
 @app.command()
-def submod(*, force: bool = True, remote: bool = False) -> None:
+def submod(*, force: bool) -> None:
     cmd = Cmd.SUBMOD
     cmd.start()
     args = ["update", "--init", "--recursive"]
     if force:
         args.append("--force")
-    if remote:
-        cmd.warn("Update all submodules to remote HEAD")
-        args.append("--remote")
     try:
-        repo.git.submodule(args)
+        REPO.git.submodule(args)
     except git.GitCommandError as e:
         cmd.fail(e)
         raise cmd.error("You need to find help") from e
@@ -414,8 +402,8 @@ def env() -> None:
 
 
 @app.command()
-def delete() -> None:
-    cmd = Cmd.DELETE
+def clean() -> None:
+    cmd = Cmd.CLEAN
     cmd.start()
 
     dirs = [Path("logs"), Path("output")]
@@ -441,7 +429,7 @@ def check(dirs: Annotated[str, typer.Argument()] = "src tests", *, strict: bool 
 
     try:
         cmd.run(f"uv run ruff format {dirs}")
-        cmd.run(f"uv run ruff check {dirs} --fix")
+        cmd.run(f"uv run ruff check {dirs} --fix --unsafe-fixes")
         cmd.run(f"uv run pyright {dirs}")
         if strict:
             cmd.run(f"uv run pylint {dirs}")

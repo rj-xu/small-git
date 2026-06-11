@@ -1,12 +1,18 @@
 [project]
 name = "small-git"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.0"
+description = "Small Git Flow"
 readme = "README.md"
-requires-python = ">=3.12"
+authors = [{ name = "RJ Xu", email = "rj.xu@ovt.com" }]
+requires-python = ">=3.14"
 dependencies = [
-    "gitpython>=3.1.45",
-    "typer>=0.18.0",
+    "gitpython>=3.1.50",
+    "pylint>=4.0.5",
+    "pyright>=1.1.410",
+    "rich>=15.0.0",
+    "ruff>=0.15.15",
+    "ty>=0.0.42",
+    "typer>=0.26.5",
 ]
 
 [[tool.uv.index]]
@@ -21,6 +27,7 @@ indent-width = 4
 select = ["ALL"]
 ignore = [
     "ANN",
+    "COM812",
     "D",
     "E741",
     "EM101",
@@ -48,13 +55,58 @@ typeCheckingMode = "strict"
 deprecateTypingAliases = true
 enableExperimentalFeatures = true
 
-reportCallInDefaultInitializer = "warning"
-reportImplicitOverride = "none"
+reportCallInDefaultInitializer = "error"
+reportImplicitOverride = "error"
 reportImplicitStringConcatenation = "none"
-reportImportCycles = "none"
+reportImportCycles = "error"
 reportMissingSuperCall = "none"
 reportPropertyTypeMismatch = "error"
-reportUninitializedInstanceVariable = "none"
-reportUnnecessaryTypeIgnoreComment = "warning"
-reportUnreachable = "none"
+reportUninitializedInstanceVariable = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+reportUnreachable = "error"
 reportUnusedCallResult = "none"
+
+[tool.pylint]
+ignore-paths = ["src/mark.py", "src/systb/param.py"]
+jobs = 8
+
+[tool.pylint."messages control"]
+enable = "invalid-name"
+disable = "all"
+
+[tool.pylint.basic]
+# snake_case     "^_?[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+# camelCase      "^_?[a-z][a-z0-9]*([A-Z][a-z0-9]+)*$"
+# PascalCase     "^_?([A-Z][a-z0-9]+)+$"
+# UPPER_CASE     "^_?[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$"
+# __magic_case__ "^__[a-z][a-z0-9]*(_[a-z0-9]+)*__$"
+
+# include-naming-hint = "y"
+
+# module-naming-style = "snake_case"
+# const-naming-style = "UPPER_CASE"
+# class-naming-style = "PascalCase"
+# function-naming-style = "snake_case"
+# method-naming-style = "snake_case"
+# attr-naming-style = "any"
+# argument-naming-style = "snake_case"
+# variable-naming-style = "snake_case"
+# class-attribute-naming-style = "any"
+# class-const-naming-style = "UPPER_CASE"
+# inlinevar-naming-style = "snake_case"
+
+module-rgx = "[a-z][a-z0-9]*(_[a-z0-9]+)*"
+const-rgx = "^_?[A-Z][A-Z0-9]*(_[A-Z0-9]+)*|__[a-z][a-z0-9]*(_[a-z0-9]+)*__$"
+class-rgx = "^_?([A-Z][a-z0-9]+)+$"
+function-rgx = "^_?[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+method-rgx = "^_?[a-z][a-z0-9]*(_[a-z0-9]+)*|__[a-z][a-z0-9]*(_[a-z0-9]+)*__$"
+attr-rgx = "^_?([a-z][a-z0-9]*(_[a-z0-9]+)*|[A-Z][A-Z0-9]*(_[A-Z0-9]+)*)$"
+argument-rgx = "^_?[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+variable-rgx = "^_?[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+class-attribute-rgx = "^_?([a-z][a-z0-9]*(_[a-z0-9]+)*|[A-Z][A-Z0-9]*(_[A-Z0-9]+)*)$"
+class-const-rgx = "^_?[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$"
+inlinevar-rgx = "^_?[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+typevar-rgx = "^[A-Z]$"
+# paramspec-rgx       = "^[A-Z]$"
+# typevartuple-rgx    = "^[A-Z]$"
+typealias-rgx = "^([A-Z][a-z0-9]+)+(T|Type)?$"
